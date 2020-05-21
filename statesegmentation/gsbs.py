@@ -6,15 +6,21 @@ from typing import Optional
 
 class GSBS:
     def __init__(self, kmax: int, x: ndarray, dmin: int = 1, y: Optional[ndarray] = None) -> None:
-        """[summary]
-
+        """Given an ROI timeseries, this class uses a greedy search algorithm (GSBS) to  
+        segment the timeseries into neural states with stable activity patterns.
+        GSBS identifies the timepoints of neural state transitions, while t-distance is used
+        to determine the optimal number of neural states.
+        
         Arguments:
-            kmax {int} -- [description]
-            x {ndarray} -- [description]
+            kmax {int} -- the maximal number of neural states that should be estimated in the greedy search
+            x {ndarray} -- the multivoxel ROI timeseries [timepoints * voxels]
 
         Keyword Arguments:
-            dmin {int} -- [description] (default: {1})
-            y {Optional[ndarray]} -- [description] (default: {None})
+            dmin {int} -- the minimal distance between timepoints that is used in the computation of t-distance  (default: {1})
+            y {Optional[ndarray]} -- a multivoxel ROI timeseries timepoints * voxels,
+                                      if y is given, the t-distance will be based on cross-validation, 
+                                      such that the state boundaries are identified using the data in x and the 
+                                      optimal number of states is identified using the data in y (default: {None})
         """
         self.x = x
         self.y = y
@@ -27,20 +33,24 @@ class GSBS:
 
     @property
     def bounds(self) -> ndarray:
-        """[summary]
+        """
 
         Returns:
-            ndarray -- [description]
+            ndarray -- array with length == number of timepoints, where a zero indicates no state transition
+            at a particular timepoint and a number indicates a state transition. State transitions
+            are numbered in the order in which they are detected in GSGS (stronger boundaries tend
+            to be detected first). 
         """
         assert self._argmax is not None
         return self._bounds * self.deltas
 
     @property
     def deltas(self) -> ndarray:
-        """[summary]
+        """
 
         Returns:
-            ndarray -- [description]
+            ndarray -- array with length == number of timepoints, where a zero indicates no state transition
+            at a particular timepoint and a one indicates a state transition.
         """
         assert self._argmax is not None
         return self._bounds <= self._argmax
