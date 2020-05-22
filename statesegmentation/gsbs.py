@@ -11,16 +11,23 @@ class GSBS:
         GSBS identifies the timepoints of neural state transitions, while t-distance is used
         to determine the optimal number of neural states.
         
+        You can find more information about the method here:
+        Geerligs L., van Gerven M., Güçlü U (2020) Detecting neural state transitions underlying event segmentation
+        biorXiv. https://doi.org/10.1101/2020.04.30.069989 
+        
         Arguments:
             kmax {int} -- the maximal number of neural states that should be estimated in the greedy search
-            x {ndarray} -- the multivoxel ROI timeseries [timepoints * voxels]
+            x {ndarray} -- a multivoxel ROI timeseries - timepoint by voxels array
+                           
 
         Keyword Arguments:
-            dmin {int} -- the minimal distance between timepoints that is used in the computation of t-distance  (default: {1})
-            y {Optional[ndarray]} -- a multivoxel ROI timeseries timepoints * voxels,
+            dmin {int} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken 
+                            into account in the computation of the t-distance metric (default: {1})
+            y {Optional[ndarray]} -- a multivoxel ROI timeseries - timepoint by voxels array
                                       if y is given, the t-distance will be based on cross-validation, 
                                       such that the state boundaries are identified using the data in x and the 
-                                      optimal number of states is identified using the data in y (default: {None})
+                                      optimal number of states is identified using the data in y. If y is not given
+                                      the state boundaries and optimal number of states are both based on x. (default: {None})
         """
         self.x = x
         self.y = y
@@ -37,8 +44,8 @@ class GSBS:
 
         Returns:
             ndarray -- array with length == number of timepoints, where a zero indicates no state transition
-            at a particular timepoint and a number indicates a state transition. State transitions
-            are numbered in the order in which they are detected in GSGS (stronger boundaries tend
+            at a particular timepoint and a higher number indicates a state transition. State transitions
+            are numbered in the order in which they are detected in GSBS (stronger boundaries tend
             to be detected first). 
         """
         assert self._argmax is not None
@@ -57,10 +64,13 @@ class GSBS:
 
     @property
     def strengths(self) -> ndarray:
-        """[summary]
+        """
 
         Returns:
-            ndarray -- [description]
+            ndarray -- array with length == number of timepoints, where a zero indicates no state transition
+            at a particular timepoint and another value indicates a state transition. The numbers indicate
+            the strength of a state transition, as indicated by the correlation-distance between neural
+            activity patterns in consecutive states. 
         """
         assert self._argmax is not None
         deltas = self.deltas
@@ -80,7 +90,8 @@ class GSBS:
         return strengths
 
     def fit(self) -> None:
-        """[summary]
+        """This function performs the GSBS and t-distance computations to determine
+        the location of state boundaries and the optimal number of states. 
         """
         i = triu(ones(self.x.shape[0], bool), self.dmin)
         z = GSBS._zscore(self.x)
