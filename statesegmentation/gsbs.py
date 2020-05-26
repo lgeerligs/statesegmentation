@@ -1,4 +1,4 @@
-from numpy import concatenate, cov, ndarray, nonzero, ones, triu, unique, zeros
+from numpy import concatenate, cov, ndarray, nonzero, ones, triu, unique, zeros, logical_and
 from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr, ttest_ind
 from typing import Optional
@@ -6,26 +6,25 @@ from typing import Optional
 
 class GSBS:
     def __init__(self, kmax: int, x: ndarray, dmin: int = 1, y: Optional[ndarray] = None) -> None:
-        """Given an ROI timeseries, this class uses a greedy search algorithm (GSBS) to  
+        """Given an ROI timeseries, this class uses a greedy search algorithm (GSBS) to
         segment the timeseries into neural states with stable activity patterns.
         GSBS identifies the timepoints of neural state transitions, while t-distance is used
         to determine the optimal number of neural states.
-        
+
         You can find more information about the method here:
         Geerligs L., van Gerven M., Güçlü U (2020) Detecting neural state transitions underlying event segmentation
-        biorXiv. https://doi.org/10.1101/2020.04.30.069989 
-        
+        biorXiv. https://doi.org/10.1101/2020.04.30.069989
+
         Arguments:
             kmax {int} -- the maximal number of neural states that should be estimated in the greedy search
             x {ndarray} -- a multivoxel ROI timeseries - timepoint by voxels array
-                           
 
         Keyword Arguments:
-            dmin {int} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken 
+            dmin {int} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken
                             into account in the computation of the t-distance metric (default: {1})
             y {Optional[ndarray]} -- a multivoxel ROI timeseries - timepoint by voxels array
-                                      if y is given, the t-distance will be based on cross-validation, 
-                                      such that the state boundaries are identified using the data in x and the 
+                                      if y is given, the t-distance will be based on cross-validation,
+                                      such that the state boundaries are identified using the data in x and the
                                       optimal number of states is identified using the data in y. If y is not given
                                       the state boundaries and optimal number of states are both based on x. (default: {None})
         """
@@ -41,12 +40,11 @@ class GSBS:
     @property
     def bounds(self) -> ndarray:
         """
-
         Returns:
             ndarray -- array with length == number of timepoints, where a zero indicates no state transition
             at a particular timepoint and a higher number indicates a state transition. State transitions
             are numbered in the order in which they are detected in GSBS (stronger boundaries tend
-            to be detected first). 
+            to be detected first).
         """
         assert self._argmax is not None
         return self._bounds * self.deltas
@@ -54,23 +52,74 @@ class GSBS:
     @property
     def deltas(self) -> ndarray:
         """
-
         Returns:
             ndarray -- array with length == number of timepoints, where a zero indicates no state transition
             at a particular timepoint and a one indicates a state transition.
         """
         assert self._argmax is not None
-        return self._bounds <= self._argmax
+        deltas = logical_and(self._bounds <= self._argmax, self._bounds > 0)
+        deltas = deltas * 1
+
+        return deltas
+
+    @property
+    def tdists(self) -> ndarray:
+        """
+        Returns:
+            ndarray -- array with length == maxk
+            contains the t-distance estimates for each value of k (number of states)
+        """
+        assert self._argmax is not None
+        return self._tdists
+
+    @property
+    def states(self) -> ndarray:
+        """
+        Returns:
+            ndarray -- array with length == number of timepoints,
+            where each timepoint is numbered according to the neural state it is in.
+        """
+        assert self._argmax is not None
+        states = self._states(self.deltas, self.x)+1
+        return states
+
+
+    @property
+    def nstates(self) -> ndarray:
+        """
+        Returns:
+            integer -- optimal number of states as determined by t-distance
+        """
+        assert self._argmax is not None
+        return self._argmax
+
+    @property
+    def state_patterns(self) -> ndarray:
+        """
+        Returns:
+            ndarray -- timepoint by nstates array
+            Contains the average voxel activity patterns for each of the estimates neural states
+        """
+        assert self._argmax is not None
+        deltas = self.deltas
+        states = self._states(deltas, self.x)
+        states_unique = unique(states)
+        xmeans = zeros((len(states_unique), self.x.shape[1]), float)
+
+        for state in states_unique:
+            xmeans[state] = self.x[state == states].mean(0)
+
+        return xmeans
+
 
     @property
     def strengths(self) -> ndarray:
         """
-
         Returns:
             ndarray -- array with length == number of timepoints, where a zero indicates no state transition
             at a particular timepoint and another value indicates a state transition. The numbers indicate
             the strength of a state transition, as indicated by the correlation-distance between neural
-            activity patterns in consecutive states. 
+            activity patterns in consecutive states.
         """
         assert self._argmax is not None
         deltas = self.deltas
@@ -85,13 +134,14 @@ class GSBS:
                 pcorrs[state - 1] = pearsonr(xmeans[state], xmeans[state - 1])[0]
 
         strengths = zeros(deltas.shape, float)
-        strengths[deltas] = 1 - pcorrs
+        strengths[deltas == 1] = 1 - pcorrs
 
         return strengths
 
+
     def fit(self) -> None:
         """This function performs the GSBS and t-distance computations to determine
-        the location of state boundaries and the optimal number of states. 
+        the location of state boundaries and the optimal number of states.
         """
         i = triu(ones(self.x.shape[0], bool), self.dmin)
         z = GSBS._zscore(self.x)
@@ -108,7 +158,7 @@ class GSBS:
             self._deltas[argmax] = True
             self._tdists[k] = 0 if sum(same) < 2 else ttest_ind(t[diff], t[same], equal_var=False)[0]
 
-        self._argmax = self._tdists.argmax()
+        self._argmax = self._tdists.argmin()
 
     @staticmethod
     def _states(deltas: ndarray, x: ndarray) -> ndarray:
