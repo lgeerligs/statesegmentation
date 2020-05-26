@@ -102,7 +102,7 @@ class GSBS:
             states = self._states(self._deltas, self.x)
             wdists = self._wdists(self._deltas, states, self.x, z)
             argmax = wdists.argmax()
-            states = concatenate(states[:argmax], states[argmax:] + 1)[:, None]
+            states = concatenate((states[:argmax], states[argmax:] + 1))[:, None]
             diff, same = (lambda c: (c == 1, c == 0))(cdist(states, states, "cityblock")[i])
             self._bounds[argmax] = k
             self._deltas[argmax] = True
