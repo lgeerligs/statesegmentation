@@ -1,6 +1,6 @@
 # statesegmentation
 
-The State Segmentation package contains the implementation of a a greedy search algorithm (GSBS) to
+The statesegmentation package contains the implementation of a a greedy search algorithm (GSBS) to
 segment a timeseries into states with stable activity patterns.
      
 You can find more information about the method here:
