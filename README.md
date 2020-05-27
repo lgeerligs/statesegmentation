@@ -8,3 +8,7 @@ Geerligs L., van Gerven M., Güçlü U (2020) Detecting neural state transitions
 biorXiv. https://doi.org/10.1101/2020.04.30.069989
         
 The package can be installed using: pip install statesegmentation
+
+An example use case can be found in the examples directory.
+
+
