@@ -11,5 +11,6 @@ setup(
     license='MIT',
     author='Linda Geerligs, Umut Güçlü',
     description='Detecting neural state transitions underlying event segmentation',
-    long_description=long_description
+    long_description=long_description,
+    long_description_content_type="text/markdown"
 )
