@@ -275,15 +275,15 @@ class GSBS:
             prevstate=-1
             for s in unique(states):
                 state = where((states > prevstate) & (states <= s))[0]
-                #prevstate = s
+                prevstate = s
                 numt = state.shape[0]
-                #if numt > 1:
-                if numt > 10 or s == max(states):
+                if numt > 1:
+                #if numt > 10 or s == max(states):
                     xt = x[state]
                     zt = z[state]
                     wdists = GSBS._wdists(deltas=zeros(numt), states=ones(numt), x = xt, z = zt)
                     boundopt[s] = wdists.argmax() + state[0]
-                    prevstate = s
+                    #prevstate = s
 
             boundopt = boundopt[boundopt>0]
             boundopt = boundopt.astype(int)
