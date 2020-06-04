@@ -5,7 +5,7 @@ from typing import Optional
 
 
 class GSBS:
-    def __init__(self, kmax: int, x: ndarray, dmin: int = 1, y: Optional[ndarray] = None) -> None:
+    def __init__(self, kmax: int, x: ndarray, dmin: int = 1, y: Optional[ndarray] = None, blocksize: Optional[int] = 50) -> None:
         """Given an ROI timeseries, this class uses a greedy search algorithm (GSBS) to
         segment the timeseries into neural states with stable activity patterns.
         GSBS identifies the timepoints of neural state transitions, while t-distance is used
@@ -21,17 +21,22 @@ class GSBS:
 
         Keyword Arguments:
             dmin {Optional[int]} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken
-                            into account in the computation of the t-distance metric (default: {1})
+                            into account in the computation of the t-distance metric. (default: {1})
             y {Optional[ndarray]} -- a multivoxel ROI timeseries - timepoint by voxels array
                                       if y is given, the t-distance will be based on cross-validation,
                                       such that the state boundaries are identified using the data in x and the
                                       optimal number of states is identified using the data in y. If y is not given
                                       the state boundaries and optimal number of states are both based on x. (default: {None})
+             blocksize {Optional[int]} -- to speed up the computation when the number of timepoints is large, the algorithm
+                                        can first detect local optima for boundary locations within a block of one or multiple states before obtaining
+                                        the optimum across all states. Blocksize indicates the minimal number of timepoints that
+                                        constitute a block. (default: {50})
         """
         self.x = x
         self.y = y
         self.kmax = kmax
         self.dmin = dmin
+        self.blocksize = blocksize
         self._argmax = None
         self._bounds = zeros(self.x.shape[0], int)
         self._deltas = zeros(self.x.shape[0], bool)
@@ -227,15 +232,15 @@ class GSBS:
 
         for k in range(2, self.kmax + 1):
             states = self._states(self._deltas, self.x)
-            wdists = self._wdists_blocks(self._deltas, states, self.x, z)
+            wdists = self._wdists_blocks(self._deltas, states, self.x, z, self.blocksize)
             argmax = wdists.argmax()
             states = concatenate((states[:argmax], states[argmax:] + 1))[:, None]
             diff, same = (lambda c: (c == 1, c == 0))(cdist(states, states, "cityblock")[i])
             self._bounds[argmax] = k
             self._deltas[argmax] = True
-            self._tdists[k] = 0 if sum(same) < 2 else ttest_ind(t[diff], t[same], equal_var=False)[0]
+            self._tdists[k] = 0 if sum(same) < 2 else ttest_ind(t[same],t[diff], equal_var=False)[0]
 
-        self._argmax = self._tdists.argmin()
+        self._argmax = self._tdists.argmax()
 
 
     @staticmethod
@@ -268,22 +273,20 @@ class GSBS:
         return wdists
 
     @staticmethod
-    def _wdists_blocks(deltas: ndarray, states: ndarray, x: ndarray, z: ndarray) -> ndarray:
+    def _wdists_blocks(deltas: ndarray, states: ndarray, x: ndarray, z: ndarray, blocksize: int) -> ndarray:
 
         if len(unique(states)) > 1:
             boundopt = zeros(max(states)+1)
             prevstate=-1
             for s in unique(states):
                 state = where((states > prevstate) & (states <= s))[0]
-                prevstate = s
                 numt = state.shape[0]
-                if numt > 1:
-                #if numt > 10 or s == max(states):
+                if numt > blocksize or s == max(states):
                     xt = x[state]
                     zt = z[state]
-                    wdists = GSBS._wdists(deltas=zeros(numt), states=ones(numt), x = xt, z = zt)
+                    wdists = GSBS._wdists(deltas=deltas[state], states=states[state], x=xt, z=zt)
                     boundopt[s] = wdists.argmax() + state[0]
-                    #prevstate = s
+                    prevstate = s
 
             boundopt = boundopt[boundopt>0]
             boundopt = boundopt.astype(int)
@@ -291,7 +294,7 @@ class GSBS:
         else:
             boundopt = None
 
-        wdists = GSBS._wdists(deltas=deltas, states=states, x=x, z=z, boundopt = boundopt)
+        wdists = GSBS._wdists(deltas=deltas, states=states, x=x, z=z, boundopt=boundopt)
 
         return wdists
 
