@@ -174,7 +174,7 @@ class GSBS:
         Returns:
             ndarray -- timepoint by nstates array
             Contains the average voxel activity patterns for each of the estimates neural states.
-            The numer of states is equal to the optimal number of states (nstates).
+            The number of states is equal to the optimal number of states (nstates).
         """
         return self.get_state_patterns(k = None)
 
