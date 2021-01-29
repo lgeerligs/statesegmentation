@@ -1,11 +1,10 @@
-from numpy import concatenate, cov, ndarray, nonzero, ones, triu, unique, zeros, logical_and, arange, max,where, int
+from numpy import concatenate, cov, ndarray, nonzero, ones, triu, unique, zeros, logical_and, arange, max,where,mean, std,sum, median, int, copy, tile
 from scipy.spatial.distance import cdist
-from scipy.stats import pearsonr, ttest_ind
-from typing import Optional
-
+from scipy.stats import pearsonr, ttest_ind, zscore
+from typing import Optional, Tuple
 
 class GSBS:
-    def __init__(self, kmax: int, x: ndarray, dmin: int = 1, y: Optional[ndarray] = None, blocksize: Optional[int] = 50) -> None:
+    def __init__(self, kmax: int, x: ndarray, y: Optional[ndarray] = None, finetune:Optional[int] = 1, blocksize: Optional[int] = 50, dmin: Optional[int] = 1) -> None:
         """Given an ROI timeseries, this class uses a greedy search algorithm (GSBS) to
         segment the timeseries into neural states with stable activity patterns.
         GSBS identifies the timepoints of neural state transitions, while t-distance is used
@@ -16,28 +15,37 @@ class GSBS:
         biorXiv. https://doi.org/10.1101/2020.04.30.069989
 
         Arguments:
-            kmax {int} -- the maximal number of neural states that should be estimated in the greedy search
+            kmax {int} -- the maximal number of neural states that should be estimated in the greedy search. To estimate
+                          the optimal number of states, half the number of timepoints is a reasonable choice for kmax.
             x {ndarray} -- a multivoxel ROI timeseries - timepoint by voxels array
 
         Keyword Arguments:
-            dmin {Optional[int]} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken
-                            into account in the computation of the t-distance metric. (default: {1})
+
             y {Optional[ndarray]} -- a multivoxel ROI timeseries - timepoint by voxels array
                                       if y is given, the t-distance will be based on cross-validation,
                                       such that the state boundaries are identified using the data in x and the
                                       optimal number of states is identified using the data in y. If y is not given
                                       the state boundaries and optimal number of states are both based on x. (default: {None})
-             blocksize {Optional[int]} -- to speed up the computation when the number of timepoints is large, the algorithm
+            finetune  {Optional[int]} -- the number of TRs around each state boundary in which the algorithm searches for the optimal boundary
+                                        during the finetuning step. If finetune is 0, no finetuning of state boundaries is performed. If finetune is <0
+                                        all TRs are included during the finetuning step. Note that the latter option will be computationally intensive
+                                        (default: {1})
+            blocksize {Optional[int]} -- to speed up the computation when the number of timepoints is large, the algorithm
                                         can first detect local optima for boundary locations within a block of one or multiple states before obtaining
                                         the optimum across all states. Blocksize indicates the minimal number of timepoints that
                                         constitute a block. (default: {50})
+            dmin {Optional[int]} -- the number of TRs around the diagonal of the time by time correlation matrix that are not taken
+                                    into account in the computation of the t-distance metric. (default: {1})
+
         """
         self.x = x
         self.y = y
         self.kmax = kmax
         self.dmin = dmin
+        self.finetune = finetune
         self.blocksize = blocksize
         self._argmax = None
+        self.all_bounds = zeros((self.kmax + 1, self.x.shape[0]), int)
         self._bounds = zeros(self.x.shape[0], int)
         self._deltas = zeros(self.x.shape[0], bool)
         self._tdists = zeros(self.kmax + 1, float)
@@ -57,7 +65,10 @@ class GSBS:
         assert self._argmax is not None
         if k is None:
             k=self._argmax
-        return self._bounds * self.get_deltas(k)
+        if self.finetune!=0:
+            return self.all_bounds[k]
+        else:
+            return self._bounds * self.get_deltas(k)
 
     @ property
     def bounds(self) -> ndarray:
@@ -82,9 +93,14 @@ class GSBS:
             at a particular timepoint and a one indicates a state transition.
         """
         assert self._argmax is not None
+
         if k is None:
-            k=self._argmax
-        deltas = logical_and(self._bounds <= k, self._bounds > 0)
+            k = self._argmax
+
+        if self.finetune!=0:
+            deltas = logical_and(self.all_bounds[k] <= k, self.all_bounds[k] > 0)
+        else:
+            deltas = logical_and(self._bounds <= k, self._bounds > 0)
         deltas = deltas * 1
 
         return deltas
@@ -103,7 +119,7 @@ class GSBS:
     def tdists(self) -> ndarray:
         """
         Returns:
-            ndarray -- array with length == maxk
+            ndarray -- array with length == kmax
             contains the t-distance estimates for each value of k (number of states)
         """
         assert self._argmax is not None
@@ -174,7 +190,7 @@ class GSBS:
         Returns:
             ndarray -- timepoint by nstates array
             Contains the average voxel activity patterns for each of the estimates neural states.
-            The number of states is equal to the optimal number of states (nstates).
+            The numer of states is equal to the optimal number of states (nstates).
         """
         return self.get_state_patterns(k = None)
 
@@ -188,7 +204,7 @@ class GSBS:
         Returns:
             ndarray -- array with length == number of timepoints, where a zero indicates no state transition
             at a particular timepoint and another value indicates a state transition. The numbers indicate
-            the strength of a state transition, as indicated by the correlation-distance between neural
+            the strength of a state transition, as indicated by the Pearson correlation-distance between neural
             activity patterns in consecutive states.
         """
         assert self._argmax is not None
@@ -210,6 +226,7 @@ class GSBS:
 
         return strengths
 
+
     @ property
     def strengths(self) -> ndarray:
         """
@@ -225,22 +242,50 @@ class GSBS:
         """This function performs the GSBS and t-distance computations to determine
         the location of state boundaries and the optimal number of states.
         """
-        i = triu(ones(self.x.shape[0], bool), self.dmin)
+        ind = triu(ones(self.x.shape[0], bool), self.dmin)
         z = GSBS._zscore(self.x)
-        r = cov(z)[i]
-        t = GSBS._zscore((r if self.y is None else cov(GSBS._zscore(self.y))[i])[None])[0]
+        if self.y is None:
+            t = cov(z)[ind]
+        else:
+            t = cov(GSBS._zscore(self.y))[ind]
 
         for k in range(2, self.kmax + 1):
             states = self._states(self._deltas, self.x)
             wdists = self._wdists_blocks(self._deltas, states, self.x, z, self.blocksize)
             argmax = wdists.argmax()
-            states = concatenate((states[:argmax], states[argmax:] + 1))[:, None]
-            diff, same = (lambda c: (c == 1, c == 0))(cdist(states, states, "cityblock")[i])
+
             self._bounds[argmax] = k
             self._deltas[argmax] = True
-            self._tdists[k] = 0 if sum(same) < 2 else ttest_ind(t[same],t[diff], equal_var=False)[0]
+
+            if self.finetune != 0 and k > 2:
+                self._bounds = self._finetune(self._bounds, self.x, z, self.finetune)
+                self._deltas=self._bounds>0
+                self.all_bounds[k]=self._bounds
+
+            states = self._states(self._deltas, self.x)[:,None]
+            diff, same, alldiff = (lambda c: (c == 1, c == 0, c > 0))(cdist(states, states, "cityblock")[ind])
+            self._tdists[k] = 0 if sum(same) < 2 else ttest_ind(t[same], t[diff], equal_var=False)[0]
 
         self._argmax = self._tdists.argmax()
+
+
+    @staticmethod
+    def _finetune(bounds: ndarray, x: ndarray, z: ndarray, finetune: int):
+        finebounds = copy(bounds.astype(int))
+        for kk in unique(bounds[bounds > 0]):
+            ind = (finebounds == kk).nonzero()[0][0]
+            finebounds[ind] = 0
+            deltas = finebounds > 0
+            states = GSBS._states(deltas, x)
+            if finetune < 0:
+                boundopt = arange(1,states.shape[0],1)
+            else:
+                boundopt = arange(max((1, ind-finetune)), min((states.shape[0],ind+finetune+1)), 1)
+            wdists = GSBS._wdists(deltas, states, x, z, boundopt)
+            argmax = wdists.argmax()
+            finebounds[argmax] = kk
+
+        return finebounds
 
 
     @staticmethod
@@ -254,7 +299,8 @@ class GSBS:
     @staticmethod
     def _wdists(deltas: ndarray, states: ndarray, x: ndarray, z: ndarray , boundopt: ndarray = None) -> ndarray:
         xmeans = zeros(x.shape, float)
-        wdists = zeros(x.shape[0], float)
+        wdists = -ones(x.shape[0], float)
+
         if boundopt is None:
             boundopt = arange(1, x.shape[0])
 
@@ -264,7 +310,7 @@ class GSBS:
         for i in boundopt:
             if deltas[i] == 0:
                 state = nonzero(states[i] == states)[0]
-                xmean = xmeans[state]  # ಠ_ಠ
+                xmean = copy(xmeans[state])
                 xmeans[state[0]: i] = x[state[0]: i].mean(0)
                 xmeans[i: state[-1] + 1] = x[i: state[-1] + 1].mean(0)
                 wdists[i] = xmeans.shape[1] * (GSBS._zscore(xmeans) * z).mean() / (xmeans.shape[1] - 1)
@@ -300,4 +346,4 @@ class GSBS:
 
     @staticmethod
     def _zscore(x: ndarray) -> ndarray:
-        return (x - x.mean(1, keepdims=True)) / x.std(1, keepdims=True)
+        return (x - x.mean(1, keepdims=True)) / x.std(1, keepdims=True, ddof=1)
