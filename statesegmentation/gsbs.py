@@ -261,6 +261,8 @@ class GSBS:
                 self._bounds = self._finetune(self._bounds, self.x, z, self.finetune)
                 self._deltas=self._bounds>0
                 self.all_bounds[k]=self._bounds
+            elif self.finetune != 0 and k == 2:
+                self.all_bounds[k]=self._bounds
 
             states = self._states(self._deltas, self.x)[:,None]
             diff, same, alldiff = (lambda c: (c == 1, c == 0, c > 0))(cdist(states, states, "cityblock")[ind])
