@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='statesegmentation',
-    version='0.0.1',
+    version='0.0.4',
     packages=['statesegmentation'],
     url='https://github.com/lgeerligs/statesegmentation',
     license='MIT',
