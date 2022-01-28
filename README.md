@@ -4,7 +4,7 @@ The statesegmentation package contains the implementation of a a greedy search a
 segment a timeseries into states with stable activity patterns.
      
 You can find more information about the method here:
-Geerligs L., van Gerven M., Güçlü U. (2020) Detecting neural state transitions underlying event segmentation
+Geerligs L., van Gerven M., Güçlü U. (2020) Detecting neural state transitions underlying event segmentation.
 Neuroimage. https://doi.org/10.1016/j.neuroimage.2021.118085
 
 The method has since been improved as described here:
