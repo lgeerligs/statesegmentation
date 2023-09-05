@@ -1,4 +1,4 @@
-from numpy import cov, ndarray, nonzero, ones, triu, unique, zeros, arange, max, where, sum, int, copy, unravel_index, \
+from numpy import cov, ndarray, nonzero, ones, triu, unique, zeros, arange, max, where, sum, copy, unravel_index, \
     argsort, cumsum, all, equal, array
 from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr, ttest_ind
